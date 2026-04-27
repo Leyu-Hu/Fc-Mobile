@@ -1,0 +1,47 @@
+name: Daily Sentiment Report
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 每天 01:00 UTC = 09:00 SGT
+  workflow_dispatch:        # 允许在 GitHub 界面手动触发
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
+      # 恢复昨日指标数据，用于环比计算
+      - name: Restore daily metrics
+        uses: actions/cache@v4
+        with:
+          path: data/
+          key: metrics-${{ github.run_id }}
+          restore-keys: |
+            metrics-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sentiment report
+        env:
+          DEEPSEEK_API_KEY:  ${{ secrets.DEEPSEEK_API_KEY }}
+          SMTP_USER:         ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD:     ${{ secrets.SMTP_PASSWORD }}
+          REPORT_EMAIL_TO:   ${{ secrets.REPORT_EMAIL_TO }}
+          MONITOR_GROUPS:    ${{ vars.MONITOR_GROUPS }}
+          PYTHONUTF8:        "1"
+        run: python main.py
