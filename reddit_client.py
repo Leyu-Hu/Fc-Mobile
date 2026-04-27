@@ -1,17 +1,35 @@
 """
-使用 Reddit 免认证 JSON 接口（无需 API key）获取帖子和社区数据。
-Reddit 对带 User-Agent 的请求限速约 60次/分钟，已在翻页间加 sleep 规避。
+Reddit 数据抓取。
+- 有 REDDIT_CLIENT_ID/SECRET 时：用 OAuth 认证（支持云端/数据中心 IP，如 GitHub Actions）
+- 无凭证时：用匿名 JSON 接口（仅本地/家庭 IP 可用）
 """
 import time
 import requests
 from datetime import datetime, timezone, timedelta
-from config import REDDIT_USER_AGENT
+from config import REDDIT_USER_AGENT, REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
 
-_HEADERS = {
-    "User-Agent": REDDIT_USER_AGENT,
-    "Accept": "application/json",
-}
-_BASE = "https://www.reddit.com"
+_JSON_BASE  = "https://www.reddit.com"
+_OAUTH_BASE = "https://oauth.reddit.com"
+
+
+def _get_token() -> str:
+    resp = requests.post(
+        "https://www.reddit.com/api/v1/access_token",
+        auth=(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET),
+        data={"grant_type": "client_credentials"},
+        headers={"User-Agent": REDDIT_USER_AGENT},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def _make_headers() -> tuple[dict, str]:
+    """返回 (headers, base_url)。有凭证用 OAuth，否则用匿名 JSON。"""
+    if REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET:
+        token = _get_token()
+        return {"Authorization": f"Bearer {token}", "User-Agent": REDDIT_USER_AGENT}, _OAUTH_BASE
+    return {"User-Agent": REDDIT_USER_AGENT, "Accept": "application/json"}, _JSON_BASE
 
 
 def _score(post: dict) -> float:
@@ -29,10 +47,7 @@ def _is_low_quality(post: dict) -> bool:
 
 
 def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
-    """
-    从各 subreddit 拉取过去 N 小时的新帖，过滤低质量内容后合并排序。
-    每个 subreddit 最多翻 10 页（1000 条原始帖子）。
-    """
+    headers, base = _make_headers()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     results = []
 
@@ -44,9 +59,9 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
                 params["after"] = after
 
             resp = requests.get(
-                f"{_BASE}/r/{sub_name}/new.json",
+                f"{base}/r/{sub_name}/new.json",
                 params=params,
-                headers=_HEADERS,
+                headers=headers,
                 timeout=15,
             )
             resp.raise_for_status()
@@ -61,7 +76,7 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
                 p = child["data"]
                 created = datetime.fromtimestamp(p["created_utc"], tz=timezone.utc)
                 if created < cutoff:
-                    continue  # 跳过超时帖，但继续翻页（API 不保证严格按时间排序）
+                    continue
                 page_has_new = True
 
                 if _is_low_quality(p):
@@ -75,7 +90,7 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
                     "id": p["id"],
                     "title": p["title"],
                     "body": body[:300],
-                    "url": f"{_BASE}{p['permalink']}",
+                    "url": f"https://reddit.com{p['permalink']}",
                     "author": p.get("author", "[deleted]"),
                     "subreddit": p.get("subreddit", sub_name),
                     "score": _score(p),
@@ -89,33 +104,32 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
                 })
 
             after = data.get("after")
-            # 整页都是旧帖，或没有下一页，停止翻页
             if not after or not page_has_new:
                 break
-            time.sleep(1)  # 避免触发 Reddit 速率限制
+            time.sleep(1)
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
 
 
 def get_subreddit_metrics(subreddits: list[str]) -> dict:
-    """获取各 subreddit 订阅数和当前在线人数。"""
+    headers, base = _make_headers()
     total_subscribers = 0
     total_active = 0
     details = []
 
     for name in subreddits:
         resp = requests.get(
-            f"{_BASE}/r/{name}/about.json",
-            headers=_HEADERS,
+            f"{base}/r/{name}/about.json",
+            headers=headers,
             timeout=15,
         )
         resp.raise_for_status()
         d = resp.json()["data"]
-        subs = d.get("subscribers", 0)
+        subs   = d.get("subscribers", 0)
         active = d.get("active_user_count", 0)
         total_subscribers += subs
-        total_active += active
+        total_active      += active
         details.append({"name": name, "subscribers": subs, "active_users": active})
         time.sleep(0.5)
 

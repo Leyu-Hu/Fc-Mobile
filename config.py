@@ -10,7 +10,9 @@ REPORT_EMAIL_TO = os.environ.get("REPORT_EMAIL_TO", "")
 SMTP_USER     = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 
-REDDIT_USER_AGENT = "FCMobile Sentiment Monitor v1.0"
+REDDIT_USER_AGENT    = "FCMobile Sentiment Monitor v1.0"
+REDDIT_CLIENT_ID     = os.environ.get("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
 
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
 METRICS_FILE = os.path.join(DATA_DIR, "daily_metrics.json")
