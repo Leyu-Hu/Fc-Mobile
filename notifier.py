@@ -12,6 +12,8 @@ from config import REPORT_EMAIL_TO, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWO
 
 
 def _to_html(text: str) -> str:
+    # 模型偶尔把换行写成字面量反斜杠-n，统一成真实换行后再渲染为 <br>
+    text = text.replace("\\n", "\n")
     lines = text.split("\n")
     html_lines = []
     for line in lines:
