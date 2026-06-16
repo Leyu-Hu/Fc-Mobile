@@ -1,13 +1,14 @@
 """
-通过 Gmail SMTP 发送邮件报告。
-本地和 GitHub Actions 均可使用，无需安装 Outlook。
+通过 SMTP 发送邮件报告（默认 Gmail）。
+可在 GitHub Actions（Linux）等无本机 Outlook 的环境运行：
+用 SMTP_USER / SMTP_PASSWORD 登录发件，报告仍发送到 REPORT_EMAIL_TO 指定的收件人。
+若未配置收件人或 SMTP 凭证，则打印到 stdout（dry-run 模式）。
 """
 import re
 import smtplib
-import ssl
-from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from config import REPORT_EMAIL_TO, SMTP_USER, SMTP_PASSWORD
+from email.utils import formataddr
+from config import REPORT_EMAIL_TO, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD
 
 
 def _to_html(text: str) -> str:
@@ -29,24 +30,28 @@ def _to_html(text: str) -> str:
     )
 
 
+def _recipients(raw: str) -> list[str]:
+    """支持用分号或逗号分隔多个收件人。"""
+    return [a.strip() for a in re.split(r"[;,]", raw or "") if a.strip()]
+
+
 def send(text: str, subject: str = "FC Mobile 社区舆情日报") -> None:
-    if not REPORT_EMAIL_TO or not SMTP_USER or not SMTP_PASSWORD:
+    recipients = _recipients(REPORT_EMAIL_TO)
+    if not recipients or not SMTP_USER or not SMTP_PASSWORD:
         print("\n" + "=" * 60)
         print(text)
         print("=" * 60)
-        print("\n[Notifier] SMTP 未配置，报告已打印到 stdout。")
+        print("\n[Notifier] REPORT_EMAIL_TO / SMTP_USER / SMTP_PASSWORD 未完整配置，报告已打印到 stdout。")
         return
 
-    msg = MIMEMultipart("alternative")
+    msg = MIMEText(_to_html(text), "html", "utf-8")
     msg["Subject"] = subject
-    msg["From"] = SMTP_USER
-    msg["To"] = REPORT_EMAIL_TO
-    msg.attach(MIMEText(_to_html(text), "html", "utf-8"))
+    msg["From"] = formataddr(("FC Sentiment Monitor", SMTP_USER))
+    msg["To"] = ", ".join(recipients)
 
-    context = ssl.create_default_context()
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls(context=context)
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
+        server.starttls()
         server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_USER, REPORT_EMAIL_TO, msg.as_string())
+        server.sendmail(SMTP_USER, recipients, msg.as_string())
 
-    print(f"邮件已发送：{SMTP_USER} → {REPORT_EMAIL_TO}")
+    print(f"邮件已发送至 {', '.join(recipients)}")

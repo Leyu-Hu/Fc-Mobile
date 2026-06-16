@@ -4,15 +4,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL   = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
-REPORT_EMAIL_TO = os.environ.get("REPORT_EMAIL_TO", "")
+REPORT_EMAIL_TO  = os.environ.get("REPORT_EMAIL_TO", "")
+
+# SMTP 发件配置（默认 Gmail）。在云端无本机 Outlook 时用它发邮件。
+SMTP_HOST     = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER     = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 
-REDDIT_USER_AGENT    = "FCMobile Sentiment Monitor v1.0"
-REDDIT_CLIENT_ID     = os.environ.get("REDDIT_CLIENT_ID", "")
-REDDIT_CLIENT_SECRET = os.environ.get("REDDIT_CLIENT_SECRET", "")
+REDDIT_USER_AGENT = "FCMobile Sentiment Monitor v1.0"
 
 DATA_DIR     = os.path.join(os.path.dirname(__file__), "data")
 METRICS_FILE = os.path.join(DATA_DIR, "daily_metrics.json")
@@ -32,5 +34,5 @@ def _parse_groups(raw: str) -> list[dict]:
 
 
 MONITOR_GROUPS = _parse_groups(
-    os.environ.get("MONITOR_GROUPS", "FC Mobile:FUTMobile|eFootball:eFootball")
+    os.environ.get("MONITOR_GROUPS") or "FC Mobile:FUTMobile|eFootball:eFootball"
 )

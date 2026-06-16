@@ -42,8 +42,6 @@ jobs:
           SMTP_USER:            ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD:        ${{ secrets.SMTP_PASSWORD }}
           REPORT_EMAIL_TO:      ${{ secrets.REPORT_EMAIL_TO }}
-          REDDIT_CLIENT_ID:     ${{ secrets.REDDIT_CLIENT_ID }}
-          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           MONITOR_GROUPS:       ${{ vars.MONITOR_GROUPS }}
           PYTHONUTF8:           "1"
         run: python main.py
