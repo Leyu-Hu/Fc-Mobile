@@ -2,7 +2,7 @@ name: Daily Sentiment Report
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # 每天 01:00 UTC = 09:00 SGT
+    - cron: '0 6 * * *'   # 每天 06:00 UTC = 14:00 (UTC+8)
   workflow_dispatch:        # 允许在 GitHub 界面手动触发
 
 jobs:
