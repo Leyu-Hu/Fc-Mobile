@@ -47,6 +47,25 @@ def _build_posts_summary(posts: list[dict], limit: int = 50) -> str:
     return "\n\n---\n\n".join(lines)
 
 
+def _no_data_sentiment(lang: str) -> dict:
+    """抓取一条都没拿到时，直接标注抓取失败，不要让 DeepSeek 凭空编一份「无数据」分析。"""
+    if lang == "en":
+        note  = ("⚠️ Post fetch FAILED today — Arctic Shift returned zero posts, so no sentiment "
+                 "analysis was run. This does NOT mean the community was quiet.")
+        blank = "N/A (fetch failed)"
+    else:
+        note  = ("⚠️ 今日帖子抓取失败——Arctic Shift 未返回任何帖子，故未做情绪分析。"
+                 "这不代表社区没有讨论。")
+        blank = "N/A（抓取失败）"
+    return {
+        "positive_pct": 0, "negative_pct": 0, "neutral_pct": 0,
+        "sentiment_explanation": note,
+        "top_positive_posts": blank, "top_negative_posts": blank,
+        "hot_topics": blank, "emergent_events": blank, "anomalies": blank,
+        "gameplay_summary": blank,
+    }
+
+
 def _build_report(
     group_name: str,
     subreddits: list[str],
@@ -180,10 +199,15 @@ def _run_group(group: dict, report_date: str, date_str: str, dry_run: bool) -> N
     posts = get_recent_posts(subreddits, hours=24)
     print(f"      有效帖子：{len(posts)} 条")
 
-    posts_summary = _build_posts_summary(posts)
-    print(f"[2/4] DeepSeek 情绪分析（中文 + English）...")
-    sentiment_zh = analyze_sentiment(posts_summary, subreddits, lang="zh")
-    sentiment_en = analyze_sentiment(posts_summary, subreddits, lang="en")
+    if posts:
+        posts_summary = _build_posts_summary(posts)
+        print(f"[2/4] DeepSeek 情绪分析（中文 + English）...")
+        sentiment_zh = analyze_sentiment(posts_summary, subreddits, lang="zh")
+        sentiment_en = analyze_sentiment(posts_summary, subreddits, lang="en")
+    else:
+        print(f"[2/4] 跳过 DeepSeek 分析：一条帖子都没抓到，报告将明确标注抓取失败")
+        sentiment_zh = _no_data_sentiment("zh")
+        sentiment_en = _no_data_sentiment("en")
 
     print(f"[3/4] 获取订阅指标...")
     today_sub  = get_subreddit_metrics(subreddits)

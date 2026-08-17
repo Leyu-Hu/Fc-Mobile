@@ -13,6 +13,47 @@ _HEADERS = {
     "Accept": "application/json",
 }
 
+# Arctic Shift 过载时会返回 HTTP 422 + {"error":"Timeout. Maybe slow down a bit"}，
+# 是瞬时限流不是参数错误，必须退避重试；否则整个 subreddit 被跳过、日报退化成空值。
+_MAX_ATTEMPTS   = 5
+_RETRY_STATUS   = {429, 500, 502, 503, 504}
+_PAGE_SLEEP     = 1.5
+
+
+def _fetch_page(params: dict) -> tuple[list | None, str]:
+    """拉一页帖子。成功返回 (posts, "")；彻底失败返回 (None, 原因)。"""
+    reason = "未知错误"
+    delay  = 5
+
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            resp = requests.get(
+                f"{_ARCTIC_BASE}/posts/search",
+                params=params,
+                headers=_HEADERS,
+                timeout=40,
+            )
+        except requests.RequestException as e:
+            reason    = f"请求异常 {e.__class__.__name__}"
+            retryable = True
+        else:
+            if resp.ok:
+                return resp.json().get("data", []), ""
+            body      = (resp.text or "").strip()[:200]
+            reason    = f"HTTP {resp.status_code} {body}"
+            retryable = resp.status_code in _RETRY_STATUS or (
+                resp.status_code == 422
+                and ("timeout" in body.lower() or "slow down" in body.lower())
+            )
+
+        if not retryable or attempt == _MAX_ATTEMPTS:
+            break
+        print(f"  Arctic Shift {reason}，{delay}s 后重试（{attempt}/{_MAX_ATTEMPTS - 1}）")
+        time.sleep(delay)
+        delay = min(delay * 2, 40)
+
+    return None, reason
+
 
 def _score(post: dict) -> float:
     return post.get("score", 0) * 1 + post.get("num_comments", 0) * 3
@@ -39,6 +80,7 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
 
     for sub_name in subreddits:
         after_ts = cutoff_ts
+        sub_count = 0
 
         for _ in range(10):
             params = {
@@ -49,28 +91,13 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
                 "sort":      "asc",
             }
 
-            try:
-                resp = requests.get(
-                    f"{_ARCTIC_BASE}/posts/search",
-                    params=params,
-                    headers=_HEADERS,
-                    timeout=20,
-                )
-            except requests.ConnectionError:
-                print(f"  Arctic Shift 连接失败，跳过 r/{sub_name}")
+            posts, err = _fetch_page(params)
+            if err:
+                print(f"  Arctic Shift 重试耗尽（{err}），r/{sub_name} 仅取到 {sub_count} 条")
                 break
-
-            if resp.status_code == 429:
-                print("  触发限速（429），等待 10 秒...")
-                time.sleep(10)
-                continue
-            if not resp.ok:
-                print(f"  Arctic Shift HTTP {resp.status_code}，跳过 r/{sub_name}")
-                break
-
-            posts = resp.json().get("data", [])
             if not posts:
                 break
+            sub_count += len(posts)
 
             for p in posts:
                 if _is_low_quality(p):
@@ -100,7 +127,10 @@ def get_recent_posts(subreddits: list[str], hours: int = 24) -> list[dict]:
             if not last_ts or last_ts >= now_ts or len(posts) < 100:
                 break
             after_ts = last_ts + 1
-            time.sleep(0.8)
+            time.sleep(_PAGE_SLEEP)
+
+        if sub_count == 0:
+            print(f"  ⚠️ r/{sub_name} 过去 {hours}h 一条都没抓到——大概率是抓取失败，不是社区没人发帖")
 
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
